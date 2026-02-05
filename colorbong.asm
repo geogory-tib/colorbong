@@ -13,7 +13,7 @@ KEY_REG equ $C000
 KEY_LATCH equ $C010
 COLOR_ADDR equ $30
 TEXT_ROW_START equ 
-ZEROPAGE_ADDR  equ $7D
+ZEROPAGE_ADDR  equ $FA
 SPACE_CHAR equ 32 + 128
 LINE_CHAR equ 45 + 128
 PLAYER_X equ 0
@@ -22,10 +22,10 @@ AI_X equ 39
 AI_COLOR equ $22
 PADDLE_LENGTH equ 8
 BALL_COLOR equ $11
-TEMP_X equ $D7
+TEMP_X equ $1E
 SPEAKER equ $C030
 ZERO_PAGE_REG equ $06
-ZERO_PAGE_REG_2 equ $CE
+ZERO_PAGE_REG_2 equ $EB
  MAC 	DEBUG_PLOT
 	lda #$FF
       	STA COLOR_ADDR
@@ -496,7 +496,8 @@ Render_Bottom_Display
         
 PutStr
 	ldy 0
-        lda 0
+    lda 0
+	
 .put_str_loop
 	lda (ZEROPAGE_ADDR),Y
         beq .put_str_exit
@@ -557,10 +558,6 @@ player_score_buf
 	byte '0 + 128
         byte '0 + 128
         byte 0
-ai_score
-	byte '0 + 128
-        byte '0 + 128
-	byte 0
 ai_score_msg
 	byte 'A + 128,'I + 128, ': +128,0 
 ai_score_buf
