@@ -20,9 +20,12 @@ PLAYER_X equ 0
 PLAYER_COLOR equ $66
 AI_X equ 39
 AI_COLOR equ $22
-PADDLE_LENGTH equ 10
+PADDLE_LENGTH equ 8
 BALL_COLOR equ $11
 TEMP_X equ $D7
+SPEAKER equ $C030
+ZERO_PAGE_REG equ $06
+ZERO_PAGE_REG_2 equ $CE
  MAC 	DEBUG_PLOT
 	lda #$FF
       	STA COLOR_ADDR
@@ -52,31 +55,41 @@ Start
         lda #BALL_COLOR
         sta COLOR_ADDR
         jsr Render_Ball
+        jsr Render_Bottom_Display
       	jmp Game_Loop
 Finish
 	debug_plot 22,22
 	jmp *
 
 Game_Loop
+	lda #1
+        cmp score_changed_flag
+        bne *+5
+        jsr Render_Bottom_Display
+	lda game_tick_counter
+	cmp #0
+        bne *+13
         jsr Handle_Ai_paddle
-      	jsr Handle_Player_Input
-        jsr Handle_Player_Movement
-        lda game_tick_counter
-        cmp #255
-        bne *+7
-        jsr Handle_Ball_Movement
+        jsr Handle_Ball_Movement 
         lda #0
+        sta game_tick_counter
         clc
         adc #1
-   	sta game_tick_counter
+        sta game_tick_counter
+      	jsr Handle_Player_Input
+        jsr Handle_Player_Movement
         lda #0
         beq Game_Loop
 Handle_Ai_paddle
-	lda game_tick_counter
-        cmp #70
-        beq .handle_ai_paddle_main
+	lda ai_pause
+        clc
+        adc #1
+        cmp #6 ;if the ai_pause value == 6 it skips the routine
+        bne *+8
+        lda #0
+        sta ai_pause 
         rts
-.handle_ai_paddle_main
+        sta ai_pause
 	lda ball_dir
         bpl *+3
         rts
@@ -84,10 +97,14 @@ Handle_Ai_paddle
         sta COLOR_ADDR
         lda #1
         jsr Render_Paddle
+        sta ZEROPAGE_ADDR
 	lda ai_pos
+        clc 
+        adc #(PADDLE_LENGTH / 2) - 1
         cmp ball_pos + 1
-        bcs .move_ai_higher
         beq .ai_no_change
+        bcs .move_ai_higher
+        
 .move_ai_lower
 	lda #1
         sta ai_dir
@@ -100,11 +117,14 @@ Handle_Ai_paddle
 	lda #0
         sta ai_dir
 .move_ai_paddle
-	clc
-	adc ai_pos
+	lda ai_pos
+        clc
+        adc ai_dir
         sta ai_pos
         cmp #0
        	bcc .out_of_bounds_high
+        beq .out_of_bounds_high
+        cmp #$FF
         beq .out_of_bounds_high
         cmp #39 - PADDLE_LENGTH
         bcs .out_of_bounds_low
@@ -132,11 +152,11 @@ Handle_Ball_Movement
         adc ball_pos + 1
         sta ball_pos + 1
         cmp #0
-        bne *+7
+        bpl *+7
         lda #1
         sta ball_dir + 1
         cmp #39
-        bne *+7
+        bcc *+7
         lda #-1
         sta ball_dir + 1
         lda ball_dir
@@ -148,7 +168,7 @@ Handle_Ball_Movement
         cmp #AI_X
         bcs .check_ai_paddle
 .handle_mov_draw
-        lda #BALL_COLOR
+	lda #BALL_COLOR
         sta COLOR_ADDR
         jsr Render_Ball
         rts 
@@ -157,20 +177,28 @@ Handle_Ball_Movement
         lda ball_pos + 1
         ldy player_pos
         ldx #PADDLE_LENGTH
-        lda #0
+        lda #0 ; used to tell which paddle missed the ball 0 for player 1 for AI
 .loop_player_paddle
 	cpy ball_pos + 1
         beq *+8
         iny
         dex
-        beq .handle_ball_exit
-        bne .loop_player_paddle 
+        beq .leave_player_check
+        bne .loop_player_paddle
+        jsr Play_Beep
         cpx #6
         bcc .player_check_middle_and_lower
-        lda #1 ;makes top half go up
+        lda #1 
         sta ball_dir
+        lda #-1
+        cpx #8
+        bcc .skip_higher_vert
+        lda #-2
+.skip_higher_vert
         sta ball_dir+1
-        jmp .handle_mov_draw
+       	jmp .handle_mov_draw
+.leave_player_check
+	jmp .handle_ball_exit
 .player_check_middle_and_lower
 	cpx #5
        	bne .player_col_lower
@@ -182,7 +210,7 @@ Handle_Ball_Movement
 .player_col_lower
 	lda #1
         sta ball_dir
-        lda #-1
+        lda #1
         sta ball_dir +1
        	jmp .handle_mov_draw
 .check_ai_paddle
@@ -193,16 +221,20 @@ Handle_Ball_Movement
         lda #1
 .loop_ai_paddle
 	cpy ball_pos + 1
-        beq *+8
+        beq .ai_col_dected
         iny
         dex
         beq .handle_ball_exit
-        bne .loop_ai_paddle 
+        bne .loop_ai_paddle
+.ai_col_dected
+	jsr Play_Beep
         cpx #6
         bcc .ai_check_middle_and_lower
-        lda #1 ;makes top half go up
+        lda #-1;makes top half go up
         sta ball_dir
-        lda #-1
+        cpx #8 ;check if it hit the tip
+        bne *+4
+        lda #-2
         sta ball_dir+1
         jmp .handle_mov_draw
 .ai_check_middle_and_lower
@@ -216,18 +248,29 @@ Handle_Ball_Movement
 .ai_col_lower
 	lda #-1
         sta ball_dir
+        lda #1
         sta ball_dir +1
        	jmp .handle_mov_draw
 .handle_ball_exit
 	cmp #0
         beq .player_missed
 .ai_missed
+	lda #<player_score_buf
+        sta ZEROPAGE_ADDR
+        lda #>player_score_buf
+        sta ZEROPAGE_ADDR+1
+        jsr Inc_Score_counters
 	lda #-1
         sta ball_dir
         lda #0
         sta ball_dir + 1
         jmp .missed_finis
 .player_missed
+	lda #<ai_score_buf
+        sta ZEROPAGE_ADDR
+        lda #>ai_score_buf
+        sta ZEROPAGE_ADDR + 1
+        jsr Inc_Score_counters
 	lda #1
         sta ball_dir
         lda #0
@@ -388,6 +431,106 @@ Clear_Text
         ldx #40
         ldy #0
         rts
+        
+Inc_Score_counters ; since actually doing a int to str conversion is reall taxing 
+                   ;Im just adding 1 to the ascii values then doing number place managing myself
+                   ; since it would be less expensive and easier to do it this way for a score display
+        lda #1
+        sta score_changed_flag
+        ldy #1
+        lda (ZEROPAGE_ADDR),Y
+        cmp #'9 + 128
+        beq .overflow_counter
+        lda (ZEROPAGE_ADDR),Y
+        clc
+        adc #1
+        sta (ZEROPAGE_ADDR),y
+        rts
+.overflow_counter
+	lda #'0 + 128
+        sta (ZEROPAGE_ADDR),y
+        ldy #0
+        lda (ZEROPAGE_ADDR),y
+        clc
+        adc #1
+        sta (ZEROPAGE_ADDR),y
+        rts
+Render_Bottom_Display 
+	lda #<$06D0
+        sta ZERO_PAGE_REG
+        lda #>$06D0
+        sta ZERO_PAGE_REG + 1
+        lda #<player_score_msg
+        sta ZEROPAGE_ADDR
+        lda #>player_score_msg
+        sta ZEROPAGE_ADDR + 1
+        jsr PutStr
+       	clc
+        adc ZERO_PAGE_REG
+        sta ZERO_PAGE_REG
+        lda #<player_score_buf
+        sta ZEROPAGE_ADDR
+        lda #>player_score_buf
+        sta ZEROPAGE_ADDR + 1
+        jsr PutStr
+       	lda #<$0750
+        sta ZERO_PAGE_REG
+        lda #>$750
+        sta ZERO_PAGE_REG + 1
+        lda #<ai_score_msg
+        sta ZEROPAGE_ADDR
+        lda #>ai_score_msg
+        sta ZEROPAGE_ADDR + 1
+        jsr PutStr
+        clc
+        adc ZERO_PAGE_REG
+        sta ZERO_PAGE_REG
+        lda #<ai_score_buf
+        sta ZEROPAGE_ADDR
+        lda #>ai_score_buf
+        sta ZEROPAGE_ADDR + 1
+        jsr PutStr
+        lda #0
+        sta score_changed_flag
+        rts
+        
+PutStr
+	ldy 0
+        lda 0
+.put_str_loop
+	lda (ZEROPAGE_ADDR),Y
+        beq .put_str_exit
+        sta (ZERO_PAGE_REG),Y
+        iny
+        bne .put_str_loop
+     
+.put_str_exit
+	tya
+	rts
+        
+Play_Beep
+	pha
+        txa
+        pha
+        tya
+        pha
+       	ldy #$40 ;duration
+.delay_reset
+        ldx #$12 ; pitch 
+.beep_loop
+        sta SPEAKER
+        dex
+        bne .beep_loop
+        dey
+        bne .delay_reset
+.beep_exit
+        pla
+        tay
+        pla
+        tax
+        pla
+        rts
+        
 player_pos
 	BYTE #23 - (PADDLE_LENGTH / 2)
 player_dir
@@ -404,3 +547,25 @@ ball_pos
         byte #23
 game_tick_counter ;things happen when it reaches a certian number
 	byte #0
+ai_pause ; ai skips a tick every 5 tics
+	byte #0
+player_score
+	byte 0
+player_score_msg
+	byte 'H + 128, 'U + 128, 'M + 128, 'A + 128, 'N + 128, ': + 128, 0
+player_score_buf
+	byte '0 + 128
+        byte '0 + 128
+        byte 0
+ai_score
+	byte '0 + 128
+        byte '0 + 128
+	byte 0
+ai_score_msg
+	byte 'A + 128,'I + 128, ': +128,0 
+ai_score_buf
+	byte '0 + 128
+        byte '0 + 128
+        byte 0 
+score_changed_flag
+	byte 0
