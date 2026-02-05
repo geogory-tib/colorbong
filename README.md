@@ -1,4 +1,7 @@
 colorbong
 =====
 
-[Open this project in 8bitworkshop](http://8bitworkshop.com/redir.html?platform=apple2&githubURL=https%3A%2F%2Fgithub.com%2Fgeogory-tib%2Fcolorbong&file=test(2).asm).
+This is a really mediocre pong clone I made as a effort to learn how to program the 6502 and the Apple II   
+It runs in low res graphics mode and has sound even. It should run on most Apple IIs as it's a very small game.
+
+Happy Hacking and have a good day.    
