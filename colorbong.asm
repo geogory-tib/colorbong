@@ -38,11 +38,12 @@ ZERO_PAGE_REG_2 equ $EB
 	org $803	; starting address
 
 Start
-	sta CLRTEXT
+  	    sta CLRTEXT
         sta SETMIXED
         sta CLRHIRES
         sta TXTPG1
-     	jsr Clear_Screen
+        lda #0
+     	  jsr Clear_Screen
         jsr Clear_Text
         lda #PLAYER_COLOR
         sta COLOR_ADDR
@@ -58,16 +59,19 @@ Start
         jsr Render_Bottom_Display
       	jmp Game_Loop
 Finish
-	debug_plot 22,22
-	jmp *
+  sta SETTEXT
+  lda #SPACE_CHAR
+  jsr Clear_Screen
+  sta CLRMIXED
+	rts
 
 Game_Loop
-	lda #1
+       	lda #1
         cmp score_changed_flag
         bne *+5
         jsr Render_Bottom_Display
-	lda game_tick_counter
-	cmp #0
+	      lda game_tick_counter
+	      cmp #0
         bne *+13
         jsr Handle_Ai_paddle
         jsr Handle_Ball_Movement 
@@ -77,11 +81,14 @@ Game_Loop
         adc #1
         sta game_tick_counter
       	jsr Handle_Player_Input
+        cmp #'Q
+        bne *+3 
+        jmp Finish
         jsr Handle_Player_Movement
         lda #0
         beq Game_Loop
 Handle_Ai_paddle
-	lda ai_pause
+        lda ai_pause
         clc
         adc #1
         cmp #6 ;if the ai_pause value == 6 it skips the routine
@@ -90,15 +97,15 @@ Handle_Ai_paddle
         sta ai_pause 
         rts
         sta ai_pause
-	lda ball_dir
+	      lda ball_dir
         bpl *+3
         rts
-	lda #00
+	      lda #00
         sta COLOR_ADDR
         lda #1
         jsr Render_Paddle
         sta ZEROPAGE_ADDR
-	lda ai_pos
+	      lda ai_pos
         clc 
         adc #(PADDLE_LENGTH / 2) - 1
         cmp ball_pos + 1
@@ -106,18 +113,18 @@ Handle_Ai_paddle
         bcs .move_ai_higher
         
 .move_ai_lower
-	lda #1
+	      lda #1
         sta ai_dir
         jmp .move_ai_paddle 
 .move_ai_higher
-	lda #-1
+	      lda #-1
         sta ai_dir
         jmp .move_ai_paddle
 .ai_no_change
-	lda #0
+	      lda #0
         sta ai_dir
 .move_ai_paddle
-	lda ai_pos
+       	lda ai_pos
         clc
         adc ai_dir
         sta ai_pos
@@ -129,7 +136,7 @@ Handle_Ai_paddle
         cmp #39 - PADDLE_LENGTH
         bcs .out_of_bounds_low
 .draw_ai_paddle
-	lda #AI_COLOR
+	      lda #AI_COLOR
         sta COLOR_ADDR
         lda #1
         jsr Render_Paddle
@@ -168,7 +175,7 @@ Handle_Ball_Movement
         cmp #AI_X
         bcs .check_ai_paddle
 .handle_mov_draw
-	lda #BALL_COLOR
+      	lda #BALL_COLOR
         sta COLOR_ADDR
         jsr Render_Ball
         rts 
@@ -198,9 +205,9 @@ Handle_Ball_Movement
         sta ball_dir+1
        	jmp .handle_mov_draw
 .leave_player_check
-	jmp .handle_ball_exit
+	      jmp .handle_ball_exit
 .player_check_middle_and_lower
-	cpx #5
+	      cpx #5
        	bne .player_col_lower
         lda #0
         sta ball_dir+1
@@ -266,24 +273,24 @@ Handle_Ball_Movement
         sta ball_dir + 1
         jmp .missed_finis
 .player_missed
-	lda #<ai_score_buf
+	      lda #<ai_score_buf
         sta ZEROPAGE_ADDR
         lda #>ai_score_buf
         sta ZEROPAGE_ADDR + 1
         jsr Inc_Score_counters
-	lda #1
+       	lda #1
         sta ball_dir
         lda #0
         sta ball_dir + 1
 .missed_finis
-	lda #20
+        	lda #20
         sta ball_pos
         lda #23
         sta ball_pos + 1
         jmp .handle_mov_draw
 
 Handle_Player_Movement
-	lda player_dir
+	      lda player_dir
         bne .handle_movement_body ; if direction is 0 exit routine
         rts
 .handle_movement_body        
@@ -307,10 +314,10 @@ Handle_Player_Movement
         jsr Render_Paddle
         rts
 Handle_Player_Input
-	jsr Get_Key_Pressed
+	      jsr Get_Key_Pressed
         cmp #'Q
         bne .key_switch_case
-        jmp Finish
+        rts  
 .key_switch_case
 	cmp #'W
         beq .handle_w_key
@@ -329,14 +336,14 @@ Handle_Player_Input
         sta player_dir
         rts 
 Get_Key_Pressed
-	lda KEY_REG
-       	bpl .exit_key_pressed
+	      lda KEY_REG 
+       	bpl .exit_no_key_pressed ; When no key is pressed the value in the keyboard register will not have the 7th bit set which will disable the negative flag
         and #$7F
         sta KEY_LATCH
         rts
-.exit_key_pressed
-	lda #255
-	rts 
+.exit_no_key_pressed
+        lda #255
+        rts
 Render_Ball
         lda ball_pos + 1
         ldy ball_pos
@@ -369,20 +376,22 @@ Render_Paddle
         bne .render_player_loop
 	rts
 
-Clear_Screen 
-	lda #<SCREEN_BUF
+Clear_Screen
+        pha
+       	lda #<SCREEN_BUF
         sta ZEROPAGE_ADDR
         lda #>SCREEN_BUF
         sta ZEROPAGE_ADDR+1
         ldy #0
 .cs_loop_start
-        lda #0
+        pla
 .cs_loop_body
-	sta (ZEROPAGE_ADDR),Y
+	      sta (ZEROPAGE_ADDR),Y
         iny
         bne .cs_loop_body
+        pha
         lda ZEROPAGE_ADDR
-	clc 
+	      clc 
         adc #$FF
         sta ZEROPAGE_ADDR
         lda ZEROPAGE_ADDR + 1
@@ -391,10 +400,11 @@ Clear_Screen
         sta ZEROPAGE_ADDR+1
         bne .cs_loop_start
 .check_low_bits
-	lda ZEROPAGE_ADDR
+	      lda ZEROPAGE_ADDR
         cmp #<SCREEN_END
         lda #0
         bne .cs_loop_start
+        pla
         rts
 Clear_Text
 	lda #LINE_CHAR
@@ -495,8 +505,8 @@ Render_Bottom_Display
         rts
         
 PutStr
-	ldy 0
-    lda 0
+	ldy #0
+  lda #0
 	
 .put_str_loop
 	lda (ZEROPAGE_ADDR),Y
@@ -539,7 +549,7 @@ player_dir
 ai_pos
 	BYTE 23 - #PADDLE_LENGTH 
 ai_dir
-	BYTE
+	BYTE 0 
 ball_dir
 	BYTE #-1
         BYTE #0
